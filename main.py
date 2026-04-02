@@ -14,15 +14,24 @@ HEADERS = {
 }
 
 def get_menu():
-    weekday = datetime.now().weekday()  # 월=0 ~ 금=4
+    weekday = datetime.now().weekday()  # 월=0, 화=1, 수=2, 목=3, 금=4
     if weekday > 4:
         print("주말 — 전송 건너뜀")
         return None
 
     days = ["월", "화", "수", "목", "금"]
     day_label = days[weekday]
-    today_str = datetime.now().strftime("%Y-%m-%d")  # 예) 2026-04-02
-    print(f"오늘 날짜: {today_str}")
+
+    # 테이블 구조:
+    # tr[0] = 헤더 (구분 / 조식 / 중식 / 석식)
+    # tr[1] = 월요일
+    # tr[2] = 화요일
+    # tr[3] = 수요일
+    # tr[4] = 목요일
+    # tr[5] = 금요일
+    # tr[6] = 토요일
+    # tr[7] = 일요일
+    target_row = weekday + 1  # 월=1, 화=2, 수=3, 목=4, 금=5
 
     try:
         r = requests.get(MEAL_URL, headers=HEADERS, timeout=20)
@@ -38,25 +47,24 @@ def get_menu():
         return "⚠️ 테이블을 찾을 수 없습니다."
 
     rows = table.find_all("tr")
+    print(f"전체 tr 개수: {len(rows)}, 오늘({day_label}요일) → tr[{target_row}] 사용")
 
-    for row in rows[1:]:  # tr[0]은 헤더(구분/조식/중식/석식)
-        cells = row.find_all(["th", "td"])
-        if not cells:
-            continue
+    if len(rows) <= target_row:
+        return f"⚠️ 행 부족 (전체 {len(rows)}행, 필요 {target_row+1}행)"
 
-        # get_text()로 읽으면 "2026-04-02\n목요일" → 줄바꿈 기준으로 split해서 첫줄만 사용
-        date_raw = cells[0].get_text()          # strip 안 함
-        date_only = date_raw.split("\n")[0].strip()  # 첫 줄 = "2026-04-02"
-        print(f"  읽은 날짜: {repr(date_only)}")
+    cells = rows[target_row].find_all(["th", "td"])
+    print(f"tr[{target_row}] 셀 개수: {len(cells)}")
 
-        if date_only == today_str:
-            if len(cells) >= 3:
-                lunch = cells[2].get_text("\n", strip=True).strip()
-                if not lunch or "등록" in lunch:
-                    return f"🍱 [{day_label}요일 중식]\n오늘 등록된 식단이 없습니다."
-                return f"🍱 [{day_label}요일 중식]\n{lunch}"
+    if len(cells) < 3:
+        return f"⚠️ 셀 부족 (전체 {len(cells)}개)"
 
-    return f"⚠️ 오늘 날짜({today_str}) 행을 찾지 못했습니다."
+    lunch = cells[2].get_text("\n", strip=True).strip()
+    print(f"중식 raw: {repr(lunch[:100])}")
+
+    if not lunch or "등록" in lunch:
+        return f"🍱 [{day_label}요일 중식]\n오늘 등록된 식단이 없습니다."
+
+    return f"🍱 [{day_label}요일 중식]\n{lunch}"
 
 
 def send_to_ntfy(message):
