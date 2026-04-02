@@ -65,7 +65,7 @@ def get_menu():
         return f"🍱 [{day_label}요일 중식]\n오늘 등록된 식단이 없습니다."
 
     # 콤마 제거 후 줄바꿈으로 분리, 빈 줄 제거
-    items = [line.strip().strip(",").strip() for line in lunch.split("\n")]
+    items = [line.strip().lstrip(",").strip() for line in lunch.split("\n")]
     items = [item for item in items if item]
     clean_lunch = "\n".join(items)
 
