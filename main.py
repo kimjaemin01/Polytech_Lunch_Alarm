@@ -49,7 +49,7 @@ def send_to_ntfy(message):
     try:
         requests.post(
             f"https://ntfy.sh/{topic}",
-            data=message.encode('utf-8'),
+            data=message.encode('utf-8'.encode('utf-8')),
             headers={
                 "Title": "점심 식단 도착!",
                 "Priority": "high",
