@@ -64,7 +64,12 @@ def get_menu():
     if not lunch or "등록" in lunch:
         return f"🍱 [{day_label}요일 중식]\n오늘 등록된 식단이 없습니다."
 
-    return f"🍱 [{day_label}요일 중식]\n{lunch}"
+    # 콤마 제거 후 줄바꿈으로 분리, 빈 줄 제거
+    items = [line.strip().strip(",").strip() for line in lunch.split("\n")]
+    items = [item for item in items if item]
+    clean_lunch = "\n".join(items)
+
+    return f"🍱 [{day_label}요일 중식]\n{clean_lunch}"
 
 
 def send_to_ntfy(message):
