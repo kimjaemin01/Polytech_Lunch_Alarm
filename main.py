@@ -1,54 +1,84 @@
 import requests
-import re
+from bs4 import BeautifulSoup
 from datetime import datetime
 
 def get_menu():
+    # 1. 학교 식단표 주소
     url = "https://www.kopo.ac.kr/gangseo/content.do?menu=2625"
+    
     try:
-        headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'}
+        # 브라우저인 척 속이기 위한 헤더
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/110.0.0.0 Safari/537.36'
+        }
         res = requests.get(url, headers=headers, timeout=15)
         res.encoding = 'utf-8'
-        html = res.text
+        soup = BeautifulSoup(res.text, 'html.parser')
+        
+        # 2. 오늘 요일 구하기 (월:0, 화:1, 수:2, 목:3, 금:4, 토:5, 일:6)
+        now = datetime.now()
+        weekday = now.weekday()
+        
+        # 주말(토, 일)이면 실행하지 않음
+        if weekday > 4:
+            print("주말입니다. 프로그램을 종료합니다.")
+            return None
 
-        # 오늘 요일 인덱스 (월:0, 화:1, 수:2, 목:3, 금:4)
-        weekday = datetime.now().weekday()
-        if weekday > 4: return None
+        # 3. 식단표 테이블의 모든 행(tr) 가져오기
+        # 캡처본 기준 'tbl_table menu' 클래스 사용
+        rows = soup.select('table.tbl_table.menu tbody tr')
+        
+        # 만약 tbody가 명확하지 않을 경우를 대비한 보조 로직
+        if not rows:
+            all_tr = soup.find_all('tr')
+            # 첫 번째 줄(제목행)을 제외한 나머지 행들
+            rows = [tr for tr in all_tr if tr.find('td')]
 
-        # 1. HTML 태그 싹 제거하고 순수 텍스트만 남기기
-        clean_text = re.sub('<[^<]+?>', '\n', html) 
-        lines = [line.strip() for line in clean_text.split('\n') if line.strip()]
-        
-        # 2. '중식'이라는 글자가 들어간 행들만 다 모으기
-        # 학교 소스 특성상 식단은 보통 특정 패턴 뒤에 몰려있습니다.
-        menu_items = []
-        for i, line in enumerate(lines):
-            if "백미밥" in line or "김치" in line or "국" in line:
-                menu_items.append(line)
-        
-        # 3. 오늘 요일에 해당하는 식단 뭉치 가져오기 (월요일=첫번째 뭉치...)
-        # 식단이 뭉쳐있으므로, 중복 제거 후 요일별로 나눕니다.
-        unique_menus = []
-        for m in menu_items:
-            if m not in unique_menus:
-                unique_menus.append(m)
-        
-        if len(unique_menus) > weekday:
-            today_menu = unique_menus[weekday]
+        # 4. 요일 번호에 맞는 행 선택 (월=0번째 줄, 화=1번째 줄...)
+        if len(rows) > weekday:
+            target_row = rows[weekday]
+            cells = target_row.find_all('td')
+            
+            # 표 구조: [0]날짜/요일 | [1]조식 | [2]중식 | [3]석식
+            # 중식은 3번째 칸(index 2)입니다.
+            if len(cells) >= 3:
+                # 내부의 span 태그나 텍스트를 줄바꿈 포함해서 추출
+                lunch_menu = cells[2].get_text(separator="\n").strip()
+                
+                if not lunch_menu or "등록된" in lunch_menu:
+                    lunch_menu = "오늘 등록된 식단이 없습니다."
+            else:
+                lunch_menu = "표의 칸(Column) 개수가 부족합니다."
         else:
-            today_menu = "식단 데이터를 찾았으나 요일 매칭에 실패했습니다."
+            lunch_menu = f"표의 행(Row) 개수가 부족합니다. (현재 {len(rows)}행 발견)"
 
-        days = ["월요일", "화요일", "수요일", "목요일", "금요일"]
-        return f"🍱 [{days[weekday]}] 중식:\n{today_menu}"
+        weekdays_ko = ["월요일", "화요일", "수요일", "목요일", "금요일"]
+        return f"🍱 [{weekdays_ko[weekday]}] 오늘의 중식:\n{lunch_menu}"
 
     except Exception as e:
-        return f"⚠️ 접속 실패: {str(e)[:30]}"
+        return f"⚠️ 오류 발생: {str(e)[:30]}"
 
 def send_to_ntfy(message):
-    if not message: return
+    if not message:
+        return
+        
+    # ntfy 주소 (본인이 설정한 토픽명)
     url = "https://ntfy.sh/Polytech_Lunch"
-    requests.post(url, data=message.encode('utf-8'), headers={"Title": "Lunch Menu"})
+    
+    try:
+        requests.post(
+            url,
+            data=message.encode('utf-8'),
+            headers={
+                "Title": "Lunch Menu Alarm",
+                "Priority": "high",
+                "Tags": "plate,fork_and_knife"
+            }
+        )
+        print("알림 전송 성공!")
+    except Exception as e:
+        print(f"알림 전송 실패: {e}")
 
 if __name__ == "__main__":
     content = get_menu()
     send_to_ntfy(content)
-    
