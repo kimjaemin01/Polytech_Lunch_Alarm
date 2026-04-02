@@ -22,6 +22,7 @@ def get_menu():
     days = ["월", "화", "수", "목", "금"]
     day_label = days[weekday]
     today_str = datetime.now().strftime("%Y-%m-%d")  # 예) 2026-04-02
+    print(f"오늘 날짜: {today_str}")
 
     try:
         r = requests.get(MEAL_URL, headers=HEADERS, timeout=20)
@@ -38,26 +39,22 @@ def get_menu():
 
     rows = table.find_all("tr")
 
-    # tr[0] = 헤더(구분/조식/중식/석식), tr[1~] = 날짜별 데이터
-    # 각 행의 첫 번째 셀: "2026-04-02\n목요일" 형태
-    # 중식은 인덱스 2번 열
-    for row in rows[1:]:  # 헤더 행 건너뜀
+    for row in rows[1:]:  # tr[0]은 헤더(구분/조식/중식/석식)
         cells = row.find_all(["th", "td"])
         if not cells:
             continue
 
-        date_cell = cells[0].get_text(strip=True)  # "2026-04-02목요일" (strip하면 \n 제거됨)
+        # get_text()로 읽으면 "2026-04-02\n목요일" → 줄바꿈 기준으로 split해서 첫줄만 사용
+        date_raw = cells[0].get_text()          # strip 안 함
+        date_only = date_raw.split("\n")[0].strip()  # 첫 줄 = "2026-04-02"
+        print(f"  읽은 날짜: {repr(date_only)}")
 
-        # 날짜 앞 10자리만 비교 (YYYY-MM-DD)
-        if date_cell[:10] == today_str:
+        if date_only == today_str:
             if len(cells) >= 3:
-                lunch = cells[2].get_text("\n", strip=True)
-                lunch = lunch.strip()
+                lunch = cells[2].get_text("\n", strip=True).strip()
                 if not lunch or "등록" in lunch:
                     return f"🍱 [{day_label}요일 중식]\n오늘 등록된 식단이 없습니다."
                 return f"🍱 [{day_label}요일 중식]\n{lunch}"
-            else:
-                return f"⚠️ 중식 열을 찾을 수 없습니다. (셀 수: {len(cells)})"
 
     return f"⚠️ 오늘 날짜({today_str}) 행을 찾지 못했습니다."
 
@@ -83,7 +80,7 @@ def send_to_ntfy(message):
 
 if __name__ == "__main__":
     content = get_menu()
-    print(content)
+    print(f"\n최종 메시지:\n{content}")
     if content is None:
         sys.exit(0)
     send_to_ntfy(content)
