@@ -14,174 +14,55 @@ HEADERS = {
 }
 
 def get_menu():
-    weekday = datetime.now().weekday()
+    weekday = datetime.now().weekday()  # 월=0 ~ 금=4
     if weekday > 4:
-        print("🔕 주말 — 전송 건너뜀")
+        print("주말 — 전송 건너뜀")
         return None
 
     days = ["월", "화", "수", "목", "금"]
     day_label = days[weekday]
-    now = datetime.now()
-    print(f"📅 오늘: {now.strftime('%Y-%m-%d')} ({day_label}요일, weekday={weekday})")
+    today_str = datetime.now().strftime("%Y-%m-%d")  # 예) 2026-04-02
 
-    session = requests.Session()
-
-    # ── 방법 1: Ajax API 후보들 시도 ──────────────────────────────
-    ajax_targets = [
-        (
-            "https://www.kopo.ac.kr/kangseo/prog/food/kangseo/sub02/list.do",
-            {"searchYear": now.strftime("%Y"), "searchMonth": now.strftime("%m")},
-        ),
-        (
-            "https://www.kopo.ac.kr/kangseo/ajax/foodMenuList.do",
-            {"year": now.strftime("%Y"), "month": now.strftime("%m"), "menu": "262"},
-        ),
-        (
-            "https://www.kopo.ac.kr/prog/food/kangseo/sub02/list.do",
-            {"searchYear": now.strftime("%Y"), "searchMonth": now.strftime("%m")},
-        ),
-    ]
-
-    for api_url, params in ajax_targets:
-        print(f"\n🔍 Ajax 시도: {api_url}")
-        try:
-            r = session.get(api_url, headers=HEADERS, params=params, timeout=12)
-            print(f"   상태코드: {r.status_code} / 응답길이: {len(r.text)}자")
-            if r.status_code == 200 and len(r.text.strip()) > 100:
-                print(f"   응답 앞 300자: {r.text[:300]}")
-                result = _parse_html(r.text, weekday, day_label, now)
-                if result:
-                    print(f"✅ Ajax 파싱 성공!")
-                    return result
-                else:
-                    print(f"   ❌ 파싱 실패 (td 없거나 식단 못 찾음)")
-        except requests.RequestException as e:
-            print(f"   ❌ 요청 실패: {e}")
-
-    # ── 방법 2: 메인 페이지 직접 파싱 ────────────────────────────
-    print(f"\n🔍 메인 페이지 직접 요청: {MEAL_URL}")
     try:
-        r = session.get(MEAL_URL, headers=HEADERS, timeout=20)
+        r = requests.get(MEAL_URL, headers=HEADERS, timeout=20)
         r.encoding = "utf-8"
-        print(f"   상태코드: {r.status_code} / 응답길이: {len(r.text)}자")
-
         if r.status_code != 200:
             return f"⚠️ 접속 실패 (HTTP {r.status_code})"
-
-        soup = BeautifulSoup(r.text, "html.parser")
-        all_tds  = soup.find_all("td")
-        all_tabs = soup.find_all("table")
-        print(f"   table 개수: {len(all_tabs)} / td 개수: {len(all_tds)}")
-
-        # 테이블 구조 출력 (디버깅용)
-        for ti, table in enumerate(all_tabs):
-            rows = table.find_all("tr")
-            print(f"\n   [table {ti}] tr={len(rows)}행")
-            for ri, row in enumerate(rows[:5]):  # 앞 5행만
-                cells = row.find_all(["th", "td"])
-                texts = [c.get_text(strip=True)[:20] for c in cells]
-                print(f"      tr[{ri}]: {texts}")
-
-        result = _parse_html(r.text, weekday, day_label, now)
-        if result:
-            print(f"✅ 메인 페이지 파싱 성공!")
-            return result
-
-        td_count = len(all_tds)
-        return (
-            f"⚠️ 식단 파싱 실패 (td {td_count}개)\n"
-            f"→ JS 동적 렌더링 문제일 가능성 높음\n"
-            f"직접 확인: {MEAL_URL}"
-        )
-
     except requests.RequestException as e:
         return f"⚠️ 네트워크 오류: {e}"
 
+    soup = BeautifulSoup(r.text, "html.parser")
+    table = soup.find("table")
+    if not table:
+        return "⚠️ 테이블을 찾을 수 없습니다."
 
-def _parse_html(html, weekday, day_label, now):
-    soup = BeautifulSoup(html, "html.parser")
+    rows = table.find_all("tr")
 
-    today_patterns = [
-        now.strftime("%Y-%m-%d"),
-        now.strftime("%m/%d"),
-        now.strftime("%-m/%-d"),
-        now.strftime("%m월%d일"),
-        now.strftime("%-m월%-d일"),
-    ]
-    day_names = ["월", "화", "수", "목", "금"]
-
-    # 전략 A: 날짜로 열 찾기
-    for table in soup.find_all("table"):
-        rows = table.find_all("tr")
-        col_idx = -1
-
-        for row in rows:
-            cells = row.find_all(["th", "td"])
-            for i, cell in enumerate(cells):
-                text = cell.get_text(strip=True).replace(" ", "")
-                if any(p.replace(" ", "") in text for p in today_patterns):
-                    col_idx = i
-                    break
-            if col_idx >= 0:
-                break
-
-        if col_idx < 0:
+    # tr[0] = 헤더(구분/조식/중식/석식), tr[1~] = 날짜별 데이터
+    # 각 행의 첫 번째 셀: "2026-04-02\n목요일" 형태
+    # 중식은 인덱스 2번 열
+    for row in rows[1:]:  # 헤더 행 건너뜀
+        cells = row.find_all(["th", "td"])
+        if not cells:
             continue
 
-        for row in rows:
-            cells = row.find_all(["th", "td"])
-            row_header = cells[0].get_text(strip=True) if cells else ""
-            if "중식" in row_header or "점심" in row_header:
-                if col_idx < len(cells):
-                    menu = cells[col_idx].get_text("\n", strip=True)
-                    if menu:
-                        return _format(day_label, menu)
+        date_cell = cells[0].get_text(strip=True)  # "2026-04-02목요일" (strip하면 \n 제거됨)
 
-        # 인덱스 방식 폴백
-        all_tds = table.find_all("td")
-        target_idx = (weekday * 4) + 2
-        if len(all_tds) > target_idx:
-            menu = all_tds[target_idx].get_text("\n", strip=True)
-            if menu and "등록된" not in menu:
-                return _format(day_label, menu)
+        # 날짜 앞 10자리만 비교 (YYYY-MM-DD)
+        if date_cell[:10] == today_str:
+            if len(cells) >= 3:
+                lunch = cells[2].get_text("\n", strip=True)
+                lunch = lunch.strip()
+                if not lunch or "등록" in lunch:
+                    return f"🍱 [{day_label}요일 중식]\n오늘 등록된 식단이 없습니다."
+                return f"🍱 [{day_label}요일 중식]\n{lunch}"
+            else:
+                return f"⚠️ 중식 열을 찾을 수 없습니다. (셀 수: {len(cells)})"
 
-    # 전략 B: 요일 헤더로 열 찾기
-    for table in soup.find_all("table"):
-        rows = table.find_all("tr")
-        col_idx = -1
-        for row in rows:
-            cells = row.find_all(["th", "td"])
-            for i, cell in enumerate(cells):
-                if cell.get_text(strip=True) == day_names[weekday]:
-                    col_idx = i
-                    break
-            if col_idx >= 0:
-                break
-
-        if col_idx < 0:
-            continue
-
-        for row in rows:
-            cells = row.find_all(["th", "td"])
-            row_header = cells[0].get_text(strip=True) if cells else ""
-            if "중식" in row_header or "점심" in row_header:
-                if col_idx < len(cells):
-                    menu = cells[col_idx].get_text("\n", strip=True)
-                    if menu:
-                        return _format(day_label, menu)
-
-    return None
-
-
-def _format(day_label, raw):
-    clean = raw.replace("중식", "").replace("점심", "").strip()
-    if not clean or "등록" in clean:
-        return f"🍱 [{day_label}요일 중식]\n오늘 등록된 식단이 없습니다."
-    return f"🍱 [{day_label}요일 중식]\n{clean}"
+    return f"⚠️ 오늘 날짜({today_str}) 행을 찾지 못했습니다."
 
 
 def send_to_ntfy(message):
-    print(f"\n📤 ntfy 전송 중...")
     try:
         resp = requests.post(
             NTFY_URL,
@@ -201,14 +82,8 @@ def send_to_ntfy(message):
 
 
 if __name__ == "__main__":
-    print("=" * 50)
     content = get_menu()
-    print("\n" + "=" * 50)
-    print("📋 최종 메시지:")
     print(content)
-    print("=" * 50)
-
     if content is None:
         sys.exit(0)
-
     send_to_ntfy(content)
