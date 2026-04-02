@@ -5,40 +5,44 @@ from datetime import datetime
 def get_menu():
     url = "https://www.kopo.ac.kr/gangseo/content.do?menu=2625"
     try:
-        res = requests.get(url, timeout=15)
+        # 헤더를 추가해서 "나 사람이야"라고 속여야 잘 줍니다.
+        headers = {'User-Agent': 'Mozilla/5.0'}
+        res = requests.get(url, headers=headers, timeout=15)
         res.encoding = 'utf-8'
         soup = BeautifulSoup(res.text, 'html.parser')
         
-        # 1. 오늘 날짜 준비 (형식: 2026-04-02)
         now = datetime.now()
-        today_str = now.strftime("%Y-%m-%d")
+        # 오늘 날짜 (예: 2026-04-02 또는 04.02)
+        today_full = now.strftime("%Y-%m-%d")
+        today_short = now.strftime("%m.%d")
         
-        # 2. 캡처본에서 확인한 테이블 클래스 'tbl_table.menu' 사용
-        table = soup.select_one('table.tbl_table.menu')
-        if not table:
-            return "⚠️ Table not found."
-
-        rows = table.select('tbody tr')
+        # 1. 특정 클래스 대신 모든 table을 다 뒤집니다. (안전빵)
+        tables = soup.find_all('table')
         lunch_menu = ""
 
-        for row in rows:
-            # 첫 번째 칸(th 또는 td)에 날짜가 들어있음
-            date_cell = row.select_one('th, td')
-            if not date_cell: continue
-            
-            # 오늘 날짜가 포함된 행인지 확인
-            if today_str in date_cell.get_text(strip=True):
-                tds = row.select('td')
-                # 캡처본 기준: 구분(th), 조식(td1), 중식(td2), 석식(td3)
-                # 즉, 중식은 tds[1] 위치에 있습니다.
-                if len(tds) >= 2:
-                    lunch_menu = tds[1].get_text(separator="\n").strip()
+        for table in tables:
+            rows = table.find_all('tr')
+            for row in rows:
+                row_text = row.get_text(strip=True)
+                
+                # 오늘 날짜가 포함된 줄을 찾으면
+                if today_full in row_text or today_short in row_text:
+                    tds = row.find_all('td')
+                    # 사진 구조상: [0]날짜/구분, [1]조식, [2]중식, [3]석식
+                    # 또는 [0]날짜/구분, [1]중식 (조식이 없는 경우 대비)
+                    
+                    # 중식 칸을 안전하게 선택 (보통 뒤에서 2번째나 3번째)
+                    if len(tds) >= 3: # 구분, 조식, 중식, 석식 다 있는 경우
+                        lunch_menu = tds[1].get_text(separator="\n").strip()
+                    elif len(tds) == 2: # 날짜, 중식만 있는 경우
+                        lunch_menu = tds[0].get_text(separator="\n").strip()
                     break
+            if lunch_menu: break
 
-        if not lunch_menu or "등록된" in lunch_menu:
-            return f"🍱 [{today_str}] No lunch menu today."
+        if not lunch_menu:
+            return f"🍱 [{today_full}] No menu found on page."
         
-        return f"🍱 [{today_str}] 오늘의 중식:\n{lunch_menu}"
+        return f"🍱 [{today_full}] Lunch:\n{lunch_menu}"
 
     except Exception as e:
         return f"⚠️ Error: {str(e)[:30]}"
@@ -51,13 +55,11 @@ def send_to_ntfy(message):
             data=message.encode('utf-8'),
             headers={
                 "Title": "Lunch Menu",
-                "Priority": "high",
-                "Tags": "plate"
+                "Priority": "high"
             }
         )
-        print("Success")
     except:
-        print("Failed")
+        pass
 
 if __name__ == "__main__":
     content = get_menu()
