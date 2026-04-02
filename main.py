@@ -43,28 +43,28 @@ def get_menu():
         return f"❌ 오류 발생: {str(e)}"
 
 def send_to_ntfy(message):
-    # 휴대폰 ntfy 앱에 등록한 이름과 대소문자까지 똑같아야 합니다!
-    topic = "Polytech_Lunch"
+    # 주소창에 입력해서 성공했던 그 주소 그대로 사용합니다.
+    url = "https://ntfy.sh/Polytech_Lunch"
     
     try:
+        # 가장 단순한 방식으로 한글 데이터를 보냅니다.
         response = requests.post(
-            f"https://ntfy.sh/{topic}",
-            data=message.encode('utf-8'),  # 깔끔하게 한 번만 인코딩!
+            url,
+            data=message.encode('utf-8'),
             headers={
-                "Title": "🍱 오늘 점심 뭐 먹지?",
-                "Priority": "high",
-                "Tags": "plate,fork_and_knife"
+                "Title": "🍱 오늘 점심 메뉴",
+                "Priority": "4", # 높은 우선순위
+                "Tags": "plate"
             }
         )
         
-        # 전송 결과 확인용 출력
         if response.status_code == 200:
-            print("✅ 알림 전송 완료!")
+            print("✅ 파이썬에서도 전송 성공!")
         else:
-            print(f"❌ 전송 실패 (상태 코드: {response.status_code})")
+            print(f"❌ 전송 실패 (에러코드: {response.status_code})")
             
     except Exception as e:
-        print(f"❌ 전송 중 오류 발생: {e}")
+        print(f"❌ 파이썬 오류: {e}")
 
 if __name__ == "__main__":
     result_menu = get_menu()
