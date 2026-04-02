@@ -43,22 +43,28 @@ def get_menu():
         return f"❌ 오류 발생: {str(e)}"
 
 def send_to_ntfy(message):
-    # 사용자의 ntfy 주소
+    # 휴대폰 ntfy 앱에 등록한 이름과 대소문자까지 똑같아야 합니다!
     topic = "Polytech_Lunch"
     
     try:
-        requests.post(
+        response = requests.post(
             f"https://ntfy.sh/{topic}",
-            data=message.encode('utf-8'.encode('utf-8')),
+            data=message.encode('utf-8'),  # 깔끔하게 한 번만 인코딩!
             headers={
-                "Title": "점심 식단 도착!",
+                "Title": "🍱 오늘 점심 뭐 먹지?",
                 "Priority": "high",
                 "Tags": "plate,fork_and_knife"
             }
         )
-        print("알림 전송 완료!")
+        
+        # 전송 결과 확인용 출력
+        if response.status_code == 200:
+            print("✅ 알림 전송 완료!")
+        else:
+            print(f"❌ 전송 실패 (상태 코드: {response.status_code})")
+            
     except Exception as e:
-        print(f"전송 실패: {e}")
+        print(f"❌ 전송 중 오류 발생: {e}")
 
 if __name__ == "__main__":
     result_menu = get_menu()
