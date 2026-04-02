@@ -1,0 +1,25 @@
+name: Polytech Lunch Alarm
+
+on:
+  schedule:
+    # 한국 시간 평일 낮 11:30 (UTC 기준 02:30)
+    - cron: '30 2 * * 1-5'
+  workflow_dispatch: # 수동 실행 버튼 생성
+
+jobs:
+  run-bot:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.9'
+
+      - name: Install libraries
+        run: pip install requests beautifulsoup4
+
+      - name: Execute script
+        run: python main.py
