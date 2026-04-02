@@ -5,61 +5,71 @@ from datetime import datetime
 def get_menu():
     url = "https://www.kopo.ac.kr/gangseo/content.do?menu=2625"
     try:
-        # 헤더를 추가해서 "나 사람이야"라고 속여야 잘 줍니다.
         headers = {'User-Agent': 'Mozilla/5.0'}
         res = requests.get(url, headers=headers, timeout=15)
         res.encoding = 'utf-8'
         soup = BeautifulSoup(res.text, 'html.parser')
         
-        now = datetime.now()
-        # 오늘 날짜 (예: 2026-04-02 또는 04.02)
-        today_full = now.strftime("%Y-%m-%d")
-        today_short = now.strftime("%m.%d")
+        # 1. 오늘 요일 구하기 (월:0, 화:1, 수:2, 목:3, 금:4, 토:5, 일:6)
+        weekday = datetime.now().weekday()
         
-        # 1. 특정 클래스 대신 모든 table을 다 뒤집니다. (안전빵)
-        tables = soup.find_all('table')
-        lunch_menu = ""
+        # 2. 주말(토, 일)이면 실행 종료
+        if weekday > 4:
+            print("주말입니다. 식단을 보내지 않습니다.")
+            return None
 
-        for table in tables:
-            rows = table.find_all('tr')
-            for row in rows:
-                row_text = row.get_text(strip=True)
+        # 3. 식단표 테이블 찾기
+        table = soup.select_one('.tbl_table.menu') or soup.find('table')
+        if not table:
+            return "⚠️ 식단표 테이블을 찾을 수 없습니다."
+
+        # 4. 데이터 행(tr)들 가져오기
+        rows = table.select('tbody tr')
+        
+        # 월요일이 rows[0]부터 시작한다고 가정할 때 오늘 요일에 맞는 행 선택
+        if len(rows) > weekday:
+            target_row = rows[weekday]
+            cells = target_row.find_all(['td', 'th'])
+            
+            # 표 구조 분석 (보여주신 사진 기준):
+            # [0] 날짜/요일 | [1] 조식 | [2] 중식 | [3] 석식
+            # 따라서 '중식'은 인덱스 2번입니다.
+            if len(cells) >= 3:
+                lunch_menu = cells[2].get_text(separator="\n").strip()
                 
-                # 오늘 날짜가 포함된 줄을 찾으면
-                if today_full in row_text or today_short in row_text:
-                    tds = row.find_all('td')
-                    # 사진 구조상: [0]날짜/구분, [1]조식, [2]중식, [3]석식
-                    # 또는 [0]날짜/구분, [1]중식 (조식이 없는 경우 대비)
-                    
-                    # 중식 칸을 안전하게 선택 (보통 뒤에서 2번째나 3번째)
-                    if len(tds) >= 3: # 구분, 조식, 중식, 석식 다 있는 경우
-                        lunch_menu = tds[1].get_text(separator="\n").strip()
-                    elif len(tds) == 2: # 날짜, 중식만 있는 경우
-                        lunch_menu = tds[0].get_text(separator="\n").strip()
-                    break
-            if lunch_menu: break
+                # 내용이 비어있거나 "등록된 식단이 없습니다"인 경우 처리
+                if len(lunch_menu) < 3 or "등록된" in lunch_menu:
+                    lunch_menu = "오늘 등록된 식단이 없습니다."
+            else:
+                lunch_menu = "표 구조가 예상과 다릅니다. (열 부족)"
+        else:
+            lunch_menu = "표의 행 개수가 요일 정보보다 적습니다."
 
-        if not lunch_menu:
-            return f"🍱 [{today_full}] No menu found on page."
-        
-        return f"🍱 [{today_full}] Lunch:\n{lunch_menu}"
+        weekdays_ko = ["월요일", "화요일", "수요일", "목요일", "금요일"]
+        return f"🍱 [{weekdays_ko[weekday]}] 오늘의 중식 메뉴:\n{lunch_menu}"
 
     except Exception as e:
-        return f"⚠️ Error: {str(e)[:30]}"
+        return f"⚠️ 오류 발생: {str(e)[:30]}"
 
 def send_to_ntfy(message):
+    # 메시지가 없으면(주말 등) 전송하지 않음
+    if not message:
+        return
+        
     url = "https://ntfy.sh/Polytech_Lunch"
     try:
         requests.post(
-            url,
-            data=message.encode('utf-8'),
+            url, 
+            data=message.encode('utf-8'), 
             headers={
-                "Title": "Lunch Menu",
-                "Priority": "high"
+                "Title": "Lunch Menu Alarm",
+                "Priority": "high",
+                "Tags": "plate,fork_and_knife"
             }
         )
+        print("전송 성공!")
     except:
-        pass
+        print("전송 실패")
 
 if __name__ == "__main__":
     content = get_menu()
